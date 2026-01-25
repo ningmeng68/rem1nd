@@ -23,9 +23,6 @@ Thumbs.db
 logs/
 *.log
 
-# Data
-*.sqlite3
-*.db
 
 # Docker
 .dockerignore
