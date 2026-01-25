@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>REM1ND</title>
+    <!-- 网站图标 -->
+    <link rel="icon" href="{{ url_for('static', filename='images/favicon.ico') }}" type="image/x-icon">
+    <link rel="shortcut icon" href="{{ url_for('static', filename='images/favicon.ico') }}" type="image/x-icon">
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- 自定义样式 -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body class="bg-gray-50 min-h-screen font-sans">
+    <!-- Toast 提示 -->
+    <div id="toast" class="toast bg-white shadow-lg rounded-lg p-3 sm:p-4 flex items-center space-x-2 sm:space-x-3 max-w-[90%] sm:max-w-xs">
+        <div id="toast-icon" class="text-green-500 text-sm sm:text-base"><i class="fas fa-check-circle"></i></div>
+        <div id="toast-message" class="text-gray-700 text-sm sm:text-base flex-1"></div>
+        <button onclick="hideToast()" class="ml-auto text-gray-400 hover:text-gray-600 p-1"><i class="fas fa-times text-sm"></i></button>
+    </div>
+
+    <!-- 导航栏 -->
+    <nav class="bg-white shadow-md py-3 px-4 sm:px-6">
+        <div class="container mx-auto flex justify-between items-center">
+            <div class="flex items-center space-x-2">
+                <i class="fas fa-bell text-blue-500 text-2xl"></i>
+                <h1 class="text-lg sm:text-xl font-bold text-gray-800">rem1nd</h1>
+            </div>
+            <div class="flex space-x-2 sm:space-x-3">
+                <button onclick="openSMTPSettings()" class="bg-gray-100 hover:bg-gray-200 px-3 py-2 sm:px-4 sm:py-2 rounded-lg flex items-center space-x-1 sm:space-x-2 text-gray-700 transition-colors">
+                    <i class="fas fa-cog text-sm"></i>
+                    <span class="text-xs sm:text-sm">设置</span>
+                </button>
+                <button onclick="openCreateModal()" class="bg-blue-500 hover:bg-blue-600 px-3 py-2 sm:px-4 sm:py-2 rounded-lg flex items-center space-x-1 sm:space-x-2 text-white transition-colors">
+                    <i class="fas fa-plus text-sm"></i>
+                    <span class="text-xs sm:text-sm">创建</span>
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- 主内容 -->
+    <main class="container mx-auto px-4 py-8">
+        <!-- 提醒列表 -->
+        <h2 class="text-xl font-semibold text-gray-800 mb-6">即将到来的提醒</h2>
+        <div id="reminders-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <!-- 提醒卡片将通过 JS 动态生成 -->
+        </div>
+        <!-- 空状态 -->
+        <div id="empty-state" class="text-center py-8 sm:py-12 hidden">
+            <i class="fas fa-bell-slash text-gray-300 text-4xl sm:text-6xl mb-4"></i>
+            <h3 class="text-base sm:text-lg font-medium text-gray-600 mb-2">暂无提醒</h3>
+            <p class="text-sm sm:text-base text-gray-500 mb-4 sm:mb-6 px-4">点击右上角按钮创建您的第一个提醒</p>
+            <button onclick="openCreateModal()" class="bg-blue-500 hover:bg-blue-600 px-5 py-2 sm:px-6 sm:py-3 rounded-lg text-white transition-colors text-sm sm:text-base">
+                <i class="fas fa-plus mr-1 sm:mr-2"></i>创建提醒
+            </button>
+        </div>
+    </main>
+
+    <!-- 创建/编辑提醒模态框 -->
+    <div id="reminder-modal" class="modal fixed inset-0 bg-black bg-opacity-50 items-center justify-center p-4">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-md p-5 sm:p-6 overflow-hidden">
+            <div class="flex justify-between items-center mb-4">
+                <h2 id="modal-title" class="text-xl font-bold text-gray-800">创建提醒</h2>
+                <button onclick="closeReminderModal()" class="text-gray-400 hover:text-gray-600 text-xl"><i class="fas fa-times"></i></button>
+            </div>
+            <form id="reminder-form" class="space-y-4">
+                <input type="hidden" id="reminder-id">
+                <div>
+                    <label for="title" class="block text-sm font-medium text-gray-700 mb-1">标题</label>
+                    <input type="text" id="title" name="title" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                </div>
+                <div>
+                    <label for="content" class="block text-sm font-medium text-gray-700 mb-1">内容</label>
+                    <textarea id="content" name="content" rows="4" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"></textarea>
+                </div>
+                <div>
+                    <label for="trigger-time" class="block text-sm font-medium text-gray-700 mb-1">触发时间</label>
+                    <input type="datetime-local" id="trigger-time" name="trigger_time" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                </div>
+                <div>
+                    <label for="recipient-email" class="block text-sm font-medium text-gray-700 mb-1">收件人邮箱</label>
+                    <input type="email" id="recipient-email" name="recipient_email" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">循环提醒</label>
+                    <div class="flex items-center space-x-4 mb-3">
+                        <div class="flex items-center space-x-2">
+                            <input type="radio" id="repeat-none" name="repeat_type" value="none" checked class="text-blue-500 focus:ring-blue-500">
+                            <label for="repeat-none" class="text-sm text-gray-700">单次</label>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <input type="radio" id="repeat-daily" name="repeat_type" value="daily" class="text-blue-500 focus:ring-blue-500">
+                            <label for="repeat-daily" class="text-sm text-gray-700">天</label>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <input type="radio" id="repeat-weekly" name="repeat_type" value="weekly" class="text-blue-500 focus:ring-blue-500">
+                            <label for="repeat-weekly" class="text-sm text-gray-700">周</label>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <input type="radio" id="repeat-monthly" name="repeat_type" value="monthly" class="text-blue-500 focus:ring-blue-500">
+                            <label for="repeat-monthly" class="text-sm text-gray-700">月</label>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <input type="radio" id="repeat-yearly" name="repeat_type" value="yearly" class="text-blue-500 focus:ring-blue-500">
+                            <label for="repeat-yearly" class="text-sm text-gray-700">年</label>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <input type="radio" id="repeat-custom" name="repeat_type" value="custom" class="text-blue-500 focus:ring-blue-500">
+                            <label for="repeat-custom" class="text-sm text-gray-700">自定义</label>
+                        </div>
+                    </div>
+                    <div id="custom-repeat-section" class="hidden mb-3">
+                        <div class="flex items-center space-x-3">
+                            <input type="number" id="repeat-interval" name="repeat_interval" min="1" value="1" class="w-20 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                            <label for="repeat-interval" class="text-sm text-gray-700">天</label>
+                        </div>
+                    </div>
+                </div>
+                <div class="pt-2 flex justify-end space-x-3">
+                    <button type="button" onclick="closeReminderModal()" class="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors">取消</button>
+                    <button type="submit" class="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors">保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- SMTP 设置模态框 -->
+    <div id="smtp-modal" class="modal fixed inset-0 bg-black bg-opacity-50 items-center justify-center p-4">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-md p-5 sm:p-6 overflow-hidden">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold text-gray-800">SMTP 设置</h2>
+                <button onclick="closeSMTPSettings()" class="text-gray-400 hover:text-gray-600 text-xl"><i class="fas fa-times"></i></button>
+            </div>
+            <form id="smtp-form" class="space-y-4">
+                <div>
+                    <label for="smtp-server" class="block text-sm font-medium text-gray-700 mb-1">SMTP 服务器</label>
+                    <input type="text" id="smtp-server" name="server" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                </div>
+                <div>
+                    <label for="smtp-port" class="block text-sm font-medium text-gray-700 mb-1">SMTP 端口</label>
+                    <input type="number" id="smtp-port" name="port" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                </div>
+                <div>
+                    <label for="smtp-sender-email" class="block text-sm font-medium text-gray-700 mb-1">发件人邮箱</label>
+                    <input type="email" id="smtp-sender-email" name="sender_email" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                </div>
+                <div>
+                    <label for="smtp-password" class="block text-sm font-medium text-gray-700 mb-1">授权码/密码</label>
+                    <input type="password" id="smtp-password" name="password" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                </div>
+                <div>
+                    <label for="smtp-sender-name" class="block text-sm font-medium text-gray-700 mb-1">发件人昵称</label>
+                    <input type="text" id="smtp-sender-name" name="sender_name" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                </div>
+                <div class="pt-2 flex justify-between items-center">
+                    <div class="flex space-x-3">
+                        <button type="button" onclick="testSMTP()" class="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg transition-colors">
+                            <i class="fas fa-paper-plane mr-1"></i>测试发送
+                        </button>
+                        <div id="test-result" class="hidden items-center space-x-1"></div>
+                    </div>
+                    <div class="flex space-x-3">
+                        <button type="button" onclick="closeSMTPSettings()" class="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors">取消</button>
+                        <button type="submit" class="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors">保存</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // 全局变量
+        let currentEditId = null;
+
+        // Toast 函数
+        function showToast(message, isSuccess = true) {
+            const toast = document.getElementById('toast');
+            const toastIcon = document.getElementById('toast-icon');
+            const toastMessage = document.getElementById('toast-message');
+            
+            toastMessage.textContent = message;
+            toastIcon.innerHTML = isSuccess ? '<i class="fas fa-check-circle text-green-500"></i>' : '<i class="fas fa-exclamation-circle text-red-500"></i>';
+            
+            toast.classList.add('show');
+            
+            setTimeout(() => {
+                hideToast();
+            }, 3000);
+        }
+
+        function hideToast() {
+            const toast = document.getElementById('toast');
+            toast.classList.remove('show');
+        }
+
+        // 模态框函数
+        function openCreateModal() {
+            currentEditId = null;
+            document.getElementById('modal-title').textContent = '创建提醒';
+            document.getElementById('reminder-form').reset();
+            document.getElementById('reminder-modal').classList.add('active');
+        }
+
+        function closeReminderModal() {
+            document.getElementById('reminder-modal').classList.remove('active');
+        }
+
+        function openSMTPSettings() {
+            document.getElementById('smtp-modal').classList.add('active');
+            loadSMTPSettings();
+        }
+
+        function closeSMTPSettings() {
+            document.getElementById('smtp-modal').classList.remove('active');
+        }
+
+        // 加载 SMTP 配置
+        async function loadSMTPSettings() {
+            try {
+                const response = await fetch('/api/smtp/config');
+                const config = await response.json();
+                if (config) {
+                    document.getElementById('smtp-server').value = config.server || '';
+                    document.getElementById('smtp-port').value = config.port || '';
+                    document.getElementById('smtp-sender-email').value = config.sender_email || '';
+                    document.getElementById('smtp-password').value = config.password || '';
+                    document.getElementById('smtp-sender-name').value = config.sender_name || '';
+                }
+            } catch (error) {
+                console.error('加载 SMTP 配置失败:', error);
+            }
+        }
+
+        // 测试 SMTP 配置
+        async function testSMTP() {
+            const formData = new FormData(document.getElementById('smtp-form'));
+            const testEmail = prompt('请输入测试收件人邮箱：');
+            if (!testEmail) return;
+            
+            formData.append('test_email', testEmail);
+            
+            const testResult = document.getElementById('test-result');
+            testResult.innerHTML = '<i class="fas fa-spinner fa-spin text-blue-500"></i><span class="text-blue-500">发送中...</span>';
+            testResult.classList.remove('hidden');
+            testResult.classList.add('flex');
+            
+            try {
+                const response = await fetch('/api/smtp/test', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (response.ok) {
+                    testResult.innerHTML = '<i class="fas fa-check-circle text-green-500"></i><span class="text-green-500">发送成功！</span>';
+                } else {
+                    testResult.innerHTML = '<i class="fas fa-times-circle text-red-500"></i><span class="text-red-500">发送失败</span>';
+                }
+            } catch (error) {
+                testResult.innerHTML = '<i class="fas fa-times-circle text-red-500"></i><span class="text-red-500">发送失败</span>';
+                console.error('测试 SMTP 失败:', error);
+            }
+            
+            setTimeout(() => {
+                testResult.classList.add('hidden');
+            }, 3000);
+        }
+
+        // 加载提醒列表
+        async function loadReminders() {
+            try {
+                const response = await fetch('/api/reminders');
+                const reminders = await response.json();
+                
+                const container = document.getElementById('reminders-container');
+                const emptyState = document.getElementById('empty-state');
+                
+                if (reminders.length === 0) {
+                    container.innerHTML = '';
+                    emptyState.classList.remove('hidden');
+                    return;
+                }
+                
+                emptyState.classList.add('hidden');
+                
+                container.innerHTML = reminders.map(reminder => {
+                    // 处理时间：优先显示 next_trigger_time（如果存在），否则显示 trigger_time
+                    const displayTime = reminder.next_trigger_time || reminder.trigger_time;
+                    const date = new Date(displayTime);
+                    // 手动构建本地时间字符串，避免时区问题
+                    const triggerTime = date.toLocaleString('zh-CN', {
+                        year: 'numeric',
+                        month: '2-digit',
+                        day: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                    });
+                    
+                    const isSent = reminder.sent;
+                    const isRecurring = reminder.repeat_type && reminder.repeat_type !== 'none';
+                    
+                    // 处理上次发送时间
+                    let lastSentTimeHtml = '';
+                    if (isRecurring && reminder.last_sent_time) {
+                        const lastSentDate = new Date(reminder.last_sent_time);
+                        const lastSent = lastSentDate.toLocaleString('zh-CN', {
+                            month: '2-digit',
+                            day: '2-digit',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                        });
+                        lastSentTimeHtml = `<div class="text-xs text-gray-400">上次发送: ${lastSent}</div>`;
+                    }
+                    
+                    return `
+                        <div class="card bg-white rounded-xl shadow-md p-4 sm:p-5 border border-gray-100">
+                            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-start mb-3">
+                                <div class="flex-1">
+                                    <h3 class="text-base sm:text-lg font-semibold text-gray-800 mb-1">${reminder.title}</h3>
+                                    <p class="text-gray-600 text-xs sm:text-sm mb-3 line-clamp-2">${reminder.content}</p>
+                                </div>
+                                ${isSent ? '<span class="bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full mt-1 sm:mt-0">已发送</span>' : '<span class="bg-yellow-100 text-yellow-800 text-xs px-2 py-1 rounded-full mt-1 sm:mt-0">待发送</span>'}
+                            </div>
+                            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center text-xs sm:text-sm text-gray-500 mb-4 space-y-2 sm:space-y-0">
+                                <div class="flex flex-col space-y-1">
+                                    <div class="flex items-center space-x-1">
+                                        <i class="fas fa-clock text-xs"></i>
+                                        <span>${triggerTime}</span>
+                                    </div>
+                                    ${lastSentTimeHtml}
+                                </div>
+                                <div class="flex items-center space-x-1 truncate">
+                                    <i class="fas fa-envelope text-xs"></i>
+                                    <span class="truncate max-w-[120px] sm:max-w-none">${reminder.recipient_email}</span>
+                                </div>
+                            </div>
+                            <div class="flex justify-end space-x-2">
+                                <button onclick="editReminder(${reminder.id})" class="text-blue-500 hover:text-blue-700 p-2 rounded hover:bg-blue-50 transition-colors">
+                                    <i class="fas fa-edit text-sm"></i>
+                                </button>
+                                <button onclick="deleteReminder(${reminder.id})" class="text-red-500 hover:text-red-700 p-2 rounded hover:bg-red-50 transition-colors">
+                                    <i class="fas fa-trash text-sm"></i>
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } catch (error) {
+                console.error('加载提醒失败:', error);
+                showToast('加载提醒失败', false);
+            }
+        }
+
+        // 创建/编辑提醒
+        document.getElementById('reminder-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const formData = new FormData(e.target);
+            const reminderId = document.getElementById('reminder-id').value;
+            
+            let url = '/api/reminders';
+            let method = 'POST';
+            
+            if (reminderId) {
+                url = `/api/reminders/${reminderId}`;
+                method = 'PUT';
+            }
+            
+            try {
+                const response = await fetch(url, {
+                    method: method,
+                    body: formData
+                });
+                
+                if (response.ok) {
+                    closeReminderModal();
+                    loadReminders();
+                    showToast(reminderId ? '提醒已更新' : '提醒已创建');
+                } else {
+                    const error = await response.json();
+                    showToast(error.message || '操作失败', false);
+                }
+            } catch (error) {
+                console.error('保存提醒失败:', error);
+                showToast('保存提醒失败', false);
+            }
+        });
+
+        // 编辑提醒
+        async function editReminder(id) {
+            try {
+                const response = await fetch('/api/reminders');
+                const reminders = await response.json();
+                const reminder = reminders.find(r => r.id === id);
+                
+                if (reminder) {
+                    document.getElementById('modal-title').textContent = '编辑提醒';
+                    document.getElementById('reminder-id').value = reminder.id;
+                    document.getElementById('title').value = reminder.title;
+                    document.getElementById('content').value = reminder.content;
+                    
+                    // 转换为 datetime-local 格式（本地时间）
+                    const date = new Date(reminder.trigger_time);
+                    // 手动构建本地时间的 ISO 格式字符串
+                    const year = date.getFullYear();
+                    const month = String(date.getMonth() + 1).padStart(2, '0');
+                    const day = String(date.getDate()).padStart(2, '0');
+                    const hours = String(date.getHours()).padStart(2, '0');
+                    const minutes = String(date.getMinutes()).padStart(2, '0');
+                    const triggerTime = `${year}-${month}-${day}T${hours}:${minutes}`;
+                    document.getElementById('trigger-time').value = triggerTime;
+                    
+                    document.getElementById('recipient-email').value = reminder.recipient_email;
+                    
+                    // 加载循环提醒设置
+                    const repeatType = reminder.repeat_type || 'none';
+                    document.querySelector(`input[name="repeat_type"][value="${repeatType}"]`).checked = true;
+                    
+                    // 显示自定义间隔输入框
+                    const customSection = document.getElementById('custom-repeat-section');
+                    if (repeatType === 'custom') {
+                        customSection.classList.remove('hidden');
+                        document.getElementById('repeat-interval').value = reminder.repeat_interval || 1;
+                    } else {
+                        customSection.classList.add('hidden');
+                    }
+                    
+                    document.getElementById('reminder-modal').classList.add('active');
+                }
+            } catch (error) {
+                console.error('获取提醒详情失败:', error);
+                showToast('获取提醒详情失败', false);
+            }
+        }
+
+        // 删除提醒
+        async function deleteReminder(id) {
+            if (confirm('确定要删除这个提醒吗？')) {
+                try {
+                    const response = await fetch(`/api/reminders/${id}`, {
+                        method: 'DELETE'
+                    });
+                    
+                    if (response.ok) {
+                        loadReminders();
+                        showToast('提醒已删除');
+                    } else {
+                        showToast('删除失败', false);
+                    }
+                } catch (error) {
+                    console.error('删除提醒失败:', error);
+                    showToast('删除提醒失败', false);
+                }
+            }
+        }
+
+        // 保存 SMTP 配置
+        document.getElementById('smtp-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const formData = new FormData(e.target);
+            
+            try {
+                const response = await fetch('/api/smtp/config', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (response.ok) {
+                    closeSMTPSettings();
+                    showToast('SMTP 配置已保存');
+                } else {
+                    showToast('保存配置失败', false);
+                }
+            } catch (error) {
+                console.error('保存 SMTP 配置失败:', error);
+                showToast('保存配置失败', false);
+            }
+        });
+
+        // 点击模态框外部关闭
+        document.getElementById('reminder-modal').addEventListener('click', (e) => {
+            if (e.target.id === 'reminder-modal') {
+                closeReminderModal();
+            }
+        });
+
+        document.getElementById('smtp-modal').addEventListener('click', (e) => {
+            if (e.target.id === 'smtp-modal') {
+                closeSMTPSettings();
+            }
+        });
+
+        // 循环提醒逻辑
+        function setupRepeatLogic() {
+            const repeatTypeRadios = document.querySelectorAll('input[name="repeat_type"]');
+            const customSection = document.getElementById('custom-repeat-section');
+            
+            repeatTypeRadios.forEach(radio => {
+                radio.addEventListener('change', function() {
+                    if (this.value === 'custom') {
+                        customSection.classList.remove('hidden');
+                    } else {
+                        customSection.classList.add('hidden');
+                    }
+                });
+            });
+        }
+        
+        // 初始化
+        window.onload = function() {
+            loadReminders();
+            setupRepeatLogic();
+        };
+    </script>
+</body>
+</html>

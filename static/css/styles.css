@@ -1,0 +1,42 @@
+/* 自定义样式 */
+.card {
+    transition: all 0.3s ease;
+}
+.card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+.modal {
+    display: none;
+    transition: opacity 0.3s ease;
+}
+.modal.active {
+    display: flex;
+    opacity: 1;
+}
+.toast {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 9999;
+    transform: translateX(400px);
+    transition: transform 0.3s ease;
+}
+.toast.show {
+    transform: translateX(0);
+}
+/* 自定义滚动条 */
+::-webkit-scrollbar {
+    width: 8px;
+}
+::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: #a8a8a8;
+}

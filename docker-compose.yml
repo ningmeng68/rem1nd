@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  rem1nd:
+    image: rem1nd:latest
+    container_name: REM1ND
+    ports:
+      - "5000:5000"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
+      - TZ=Asia/Shanghai
+    volumes:
+      - ./data:/app/data  # 挂载数据目录，持久化数据库
+      - /etc/timezone:/etc/timezone:ro  # 确保时区一致
+      - /etc/localtime:/etc/localtime:ro  # 确保时区一致
+    restart: unless-stopped
