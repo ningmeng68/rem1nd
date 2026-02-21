@@ -33,6 +33,20 @@ def init_db():
     conn = sqlite3.connect(DATABASE)
     cursor = conn.cursor()
     
+    # 检查 tags 表是否存在
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='tags'")
+    tags_table_exists = cursor.fetchone()
+    
+    if not tags_table_exists:
+        # 创建标签表
+        cursor.execute('''
+            CREATE TABLE tags (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+    
     # 检查 reminders 表是否存在
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='reminders'")
     table_exists = cursor.fetchone()
@@ -51,7 +65,8 @@ def init_db():
                 repeat_type TEXT DEFAULT NULL,
                 repeat_interval INTEGER DEFAULT NULL,
                 next_trigger_time DATETIME,
-                last_sent_time DATETIME
+                last_sent_time DATETIME,
+                tags TEXT DEFAULT NULL
             )
         ''')
     else:
@@ -68,6 +83,8 @@ def init_db():
             cursor.execute("ALTER TABLE reminders ADD COLUMN next_trigger_time DATETIME")
         if 'last_sent_time' not in columns:
             cursor.execute("ALTER TABLE reminders ADD COLUMN last_sent_time DATETIME")
+        if 'tags' not in columns:
+            cursor.execute("ALTER TABLE reminders ADD COLUMN tags TEXT DEFAULT NULL")
     
     # 检查 smtp_config 表是否存在
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='smtp_config'")
@@ -448,9 +465,15 @@ def test_smtp():
 @login_required
 def reminders():
     if request.method == 'GET':
+        tag_filter = request.args.get('tag')
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute('SELECT * FROM reminders ORDER BY trigger_time')
+        
+        if tag_filter:
+            cursor.execute('SELECT * FROM reminders WHERE tags LIKE ? ORDER BY trigger_time', (f'%,{tag_filter},%',))
+        else:
+            cursor.execute('SELECT * FROM reminders ORDER BY trigger_time')
+            
         reminders = cursor.fetchall()
         conn.close()
         
@@ -463,6 +486,11 @@ def reminders():
             recipient_email = request.form.get('recipient_email')
             repeat_type = request.form.get('repeat_type') or 'none'
             repeat_interval = request.form.get('repeat_interval')
+            tags = request.form.get('tags') or ''
+            
+            # 将标签处理为逗号分隔的格式，前后加逗号以便于模糊查询
+            tags_list = [tag.strip() for tag in tags.split(',') if tag.strip()]
+            tags_str = f',{",".join(tags_list)},' if tags_list else None
             
             # 将 datetime-local 格式转换为完整的 ISO 格式
             trigger_time = datetime.strptime(trigger_time_str, '%Y-%m-%dT%H:%M')
@@ -479,8 +507,8 @@ def reminders():
             conn = get_db()
             cursor = conn.cursor()
             cursor.execute(
-                'INSERT INTO reminders (title, content, trigger_time, recipient_email, repeat_type, repeat_interval, next_trigger_time) VALUES (?, ?, ?, ?, ?, ?, ?)',
-                (title, content, trigger_time_iso, recipient_email, repeat_type, repeat_interval, next_trigger_time)
+                'INSERT INTO reminders (title, content, trigger_time, recipient_email, repeat_type, repeat_interval, next_trigger_time, tags) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                (title, content, trigger_time_iso, recipient_email, repeat_type, repeat_interval, next_trigger_time, tags_str)
             )
             conn.commit()
             
@@ -492,6 +520,53 @@ def reminders():
             return jsonify({"status": "success", "reminder": reminder})
         except Exception as e:
             return jsonify({"status": "error", "message": str(e)}), 400
+
+# 标签管理 API
+@app.route('/api/tags', methods=['GET', 'POST'])
+@login_required
+def tags_manage():
+    if request.method == 'GET':
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM tags ORDER BY name')
+        tags = cursor.fetchall()
+        conn.close()
+        return jsonify([dict(tag) for tag in tags])
+    elif request.method == 'POST':
+        try:
+            name = request.form.get('name', '').strip()
+            if not name:
+                return jsonify({"status": "error", "message": "标签名称不能为空"}), 400
+            
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute('INSERT INTO tags (name) VALUES (?)', (name,))
+            conn.commit()
+            
+            tag_id = cursor.lastrowid
+            cursor.execute('SELECT * FROM tags WHERE id = ?', (tag_id,))
+            tag = dict(cursor.fetchone())
+            conn.close()
+            
+            return jsonify({"status": "success", "tag": tag})
+        except sqlite3.IntegrityError:
+            return jsonify({"status": "error", "message": "标签已存在"}), 400
+        except Exception as e:
+            return jsonify({"status": "error", "message": str(e)}), 400
+
+# 删除标签 API
+@app.route('/api/tags/<int:tag_id>', methods=['DELETE'])
+@login_required
+def delete_tag(tag_id):
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM tags WHERE id = ?', (tag_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({"status": "success"})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 400
 
 # 单个提醒管理 API
 @app.route('/api/reminders/<int:reminder_id>', methods=['PUT', 'DELETE'])
@@ -505,6 +580,11 @@ def reminder(reminder_id):
             recipient_email = request.form.get('recipient_email')
             repeat_type = request.form.get('repeat_type') or 'none'
             repeat_interval = request.form.get('repeat_interval')
+            tags = request.form.get('tags') or ''
+            
+            # 将标签处理为逗号分隔的格式，前后加逗号以便于模糊查询
+            tags_list = [tag.strip() for tag in tags.split(',') if tag.strip()]
+            tags_str = f',{",".join(tags_list)},' if tags_list else None
             
             # 将 datetime-local 格式转换为完整的 ISO 格式
             trigger_time = datetime.strptime(trigger_time_str, '%Y-%m-%dT%H:%M')
@@ -521,8 +601,8 @@ def reminder(reminder_id):
             conn = get_db()
             cursor = conn.cursor()
             cursor.execute(
-                'UPDATE reminders SET title = ?, content = ?, trigger_time = ?, recipient_email = ?, repeat_type = ?, repeat_interval = ?, next_trigger_time = ? WHERE id = ?',
-                (title, content, trigger_time_iso, recipient_email, repeat_type, repeat_interval, next_trigger_time, reminder_id)
+                'UPDATE reminders SET title = ?, content = ?, trigger_time = ?, recipient_email = ?, repeat_type = ?, repeat_interval = ?, next_trigger_time = ?, tags = ? WHERE id = ?',
+                (title, content, trigger_time_iso, recipient_email, repeat_type, repeat_interval, next_trigger_time, tags_str, reminder_id)
             )
             conn.commit()
             

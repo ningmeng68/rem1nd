@@ -38,6 +38,10 @@
                     <i class="fas fa-cog text-sm"></i>
                     <span class="text-xs sm:text-sm">设置</span>
                 </button>
+                <button onclick="openTagSettings()" class="bg-green-100 hover:bg-green-200 px-3 py-2 sm:px-4 sm:py-2 rounded-lg flex items-center space-x-1 sm:space-x-2 text-green-700 transition-colors">
+                    <i class="fas fa-tags text-sm"></i>
+                    <span class="text-xs sm:text-sm">标签</span>
+                </button>
                 <button onclick="openCreateModal()" class="bg-blue-500 hover:bg-blue-600 px-3 py-2 sm:px-4 sm:py-2 rounded-lg flex items-center space-x-1 sm:space-x-2 text-white transition-colors">
                     <i class="fas fa-plus text-sm"></i>
                     <span class="text-xs sm:text-sm">创建</span>
@@ -52,8 +56,18 @@
 
     <!-- 主内容 -->
     <main class="container mx-auto px-4 py-8">
-        <!-- 提醒列表 -->
-        <h2 class="text-xl font-semibold text-gray-800 mb-6">即将到来的提醒</h2>
+        <!-- 提醒列表标题和标签筛选 -->
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
+            <h2 class="text-xl font-semibold text-gray-800">即将到来的提醒</h2>
+            <!-- 标签筛选 -->
+            <div class="flex items-center gap-2 flex-wrap">
+                <span class="text-sm text-gray-600">筛选标签:</span>
+                <button id="clear-tag-filter" onclick="clearTagFilter()" class="text-sm px-3 py-1 rounded-full border border-gray-300 text-gray-600 hover:bg-gray-100 transition-colors hidden">
+                    清除筛选
+                </button>
+                <div id="tags-filter-container" class="flex items-center gap-2 flex-wrap"></div>
+            </div>
+        </div>
         <div id="reminders-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             <!-- 提醒卡片将通过 JS 动态生成 -->
         </div>
@@ -127,6 +141,10 @@
                             <label for="repeat-interval" class="text-sm text-gray-700">天</label>
                         </div>
                     </div>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">标签</label>
+                    <div id="tags-select-container" class="flex flex-wrap gap-2"></div>
                 </div>
                 <div class="pt-2 flex justify-end space-x-3">
                     <button type="button" onclick="closeReminderModal()" class="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors">取消</button>
@@ -208,9 +226,30 @@
         </div>
     </div>
 
+    <!-- 标签管理模态框 -->
+    <div id="tags-modal" class="modal fixed inset-0 bg-black bg-opacity-50 items-center justify-center p-4">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-md p-5 sm:p-6 overflow-hidden">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold text-gray-800">标签管理</h2>
+                <button onclick="closeTagSettings()" class="text-gray-400 hover:text-gray-600 text-xl"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="mb-4">
+                <div class="flex items-center gap-2">
+                    <input type="text" id="new-tag-input" placeholder="输入新标签名称" class="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                    <button onclick="createTag()" class="bg-blue-500 hover:bg-blue-600 px-4 py-2 rounded-lg text-white transition-colors">
+                        <i class="fas fa-plus mr-1"></i>添加
+                    </button>
+                </div>
+            </div>
+            <div id="tags-manage-container" class="flex flex-wrap gap-2 max-h-64 overflow-y-auto"></div>
+        </div>
+    </div>
+
     <script>
         // 全局变量
         let currentEditId = null;
+        let currentTagFilter = null;
+        let allTags = [];
         
         // 登出函数
         async function logout() {
@@ -260,6 +299,9 @@
             currentEditId = null;
             document.getElementById('modal-title').textContent = '创建提醒';
             document.getElementById('reminder-form').reset();
+            document.getElementById('custom-repeat-section').classList.add('hidden');
+            document.getElementById('reminder-id').value = '';
+            renderTagsSelect();
             document.getElementById('reminder-modal').classList.add('active');
         }
 
@@ -283,6 +325,15 @@
 
         function closePasswordSettings() {
             document.getElementById('password-modal').classList.remove('active');
+        }
+        
+        function openTagSettings() {
+            renderTagsManage();
+            document.getElementById('tags-modal').classList.add('active');
+        }
+
+        function closeTagSettings() {
+            document.getElementById('tags-modal').classList.remove('active');
         }
 
         // 加载 SMTP 配置
@@ -342,7 +393,11 @@
         // 加载提醒列表
         async function loadReminders() {
             try {
-                const response = await fetch('/api/reminders');
+                let url = '/api/reminders';
+                if (currentTagFilter) {
+                    url += `?tag=${encodeURIComponent(currentTagFilter)}`;
+                }
+                const response = await fetch(url);
                 if (!await checkAuth(response)) return;
                 const reminders = await response.json();
                 
@@ -358,6 +413,15 @@
                 emptyState.classList.add('hidden');
                 
                 container.innerHTML = reminders.map(reminder => {
+                    // 处理标签
+                    let tagsHtml = '';
+                    if (reminder.tags) {
+                        const tags = reminder.tags.trim(',').split(',').filter(tag => tag.trim() !== '');
+                        tagsHtml = tags.map(tag => 
+                            `<span class="inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full mr-1 mb-1">${tag}</span>`
+                        ).join('');
+                    }
+                    
                     // 处理时间：优先显示 next_trigger_time（如果存在），否则显示 trigger_time
                     const displayTime = reminder.next_trigger_time || reminder.trigger_time;
                     const date = new Date(displayTime);
@@ -391,7 +455,8 @@
                             <div class="flex flex-col sm:flex-row justify-between items-start sm:items-start mb-3">
                                 <div class="flex-1">
                                     <h3 class="text-base sm:text-lg font-semibold text-gray-800 mb-1">${reminder.title}</h3>
-                                    <p class="text-gray-600 text-xs sm:text-sm mb-3 line-clamp-2">${reminder.content}</p>
+                                    <p class="text-gray-600 text-xs sm:text-sm mb-2 line-clamp-2">${reminder.content}</p>
+                                    ${tagsHtml}
                                 </div>
                                 ${isSent ? '<span class="bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full mt-1 sm:mt-0">已发送</span>' : '<span class="bg-yellow-100 text-yellow-800 text-xs px-2 py-1 rounded-full mt-1 sm:mt-0">待发送</span>'}
                             </div>
@@ -419,10 +484,166 @@
                         </div>
                     `;
                 }).join('');
+                
+                // 渲染标签筛选
+                renderTagsFilter();
             } catch (error) {
                 console.error('加载提醒失败:', error);
                 showToast('加载提醒失败', false);
             }
+        }
+        
+        // 加载所有标签
+        async function loadTags() {
+            try {
+                const response = await fetch('/api/tags');
+                if (!await checkAuth(response)) return;
+                allTags = await response.json();
+                renderTagsManage();
+                renderTagsFilter();
+            } catch (error) {
+                console.error('加载标签失败:', error);
+            }
+        }
+        
+        // 渲染标签管理区域
+        function renderTagsManage() {
+            const container = document.getElementById('tags-manage-container');
+            if (allTags.length === 0) {
+                container.innerHTML = '<p class="text-gray-500 text-sm">暂无标签，添加标签来组织您的提醒</p>';
+                return;
+            }
+            
+            container.innerHTML = allTags.map(tag => `
+                <div class="flex items-center gap-1 bg-blue-100 text-blue-800 text-sm px-3 py-1 rounded-full">
+                    <span>${tag.name}</span>
+                    <button onclick="deleteTag(${tag.id})" class="ml-1 hover:text-red-600 transition-colors">
+                        <i class="fas fa-times text-xs"></i>
+                    </button>
+                </div>
+            `).join('');
+        }
+        
+        // 创建标签
+        async function createTag() {
+            const input = document.getElementById('new-tag-input');
+            const name = input.value.trim();
+            if (!name) {
+                showToast('请输入标签名称', false);
+                return;
+            }
+            
+            try {
+                const formData = new FormData();
+                formData.append('name', name);
+                
+                const response = await fetch('/api/tags', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (!await checkAuth(response)) return;
+                
+                if (response.ok) {
+                    input.value = '';
+                    await loadTags();
+                    showToast('标签创建成功');
+                    // 重新渲染标签管理列表
+                    renderTagsManage();
+                } else {
+                    const error = await response.json();
+                    showToast(error.message || '创建标签失败', false);
+                }
+            } catch (error) {
+                console.error('创建标签失败:', error);
+                showToast('创建标签失败', false);
+            }
+        }
+        
+        // 删除标签
+        async function deleteTag(tagId) {
+            if (!confirm('确定要删除这个标签吗？')) return;
+            
+            try {
+                const response = await fetch(`/api/tags/${tagId}`, {
+                    method: 'DELETE'
+                });
+                
+                if (!await checkAuth(response)) return;
+                
+                if (response.ok) {
+                    await loadTags();
+                    showToast('标签已删除');
+                    // 重新渲染标签管理列表
+                    renderTagsManage();
+                } else {
+                    showToast('删除标签失败', false);
+                }
+            } catch (error) {
+                console.error('删除标签失败:', error);
+                showToast('删除标签失败', false);
+            }
+        }
+        
+        // 渲染标签筛选
+        function renderTagsFilter() {
+            const container = document.getElementById('tags-filter-container');
+            if (allTags.length === 0) {
+                container.innerHTML = '';
+                return;
+            }
+            
+            container.innerHTML = allTags.map(tag => {
+                const isActive = currentTagFilter === tag.name;
+                return `
+                    <button 
+                        onclick="filterByTag('${tag.name}')" 
+                        class="text-sm px-3 py-1 rounded-full transition-colors ${isActive ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}"
+                    >
+                        ${tag.name}
+                    </button>
+                `;
+            }).join('');
+        }
+        
+        // 按标签筛选
+        function filterByTag(tagName) {
+            currentTagFilter = tagName;
+            document.getElementById('clear-tag-filter').classList.remove('hidden');
+            loadReminders();
+            renderTagsFilter();
+        }
+        
+        // 清除标签筛选
+        function clearTagFilter() {
+            currentTagFilter = null;
+            document.getElementById('clear-tag-filter').classList.add('hidden');
+            loadReminders();
+            renderTagsFilter();
+        }
+        
+        // 渲染标签选择（用于创建/编辑提醒）
+        function renderTagsSelect(selectedTagsStr = '') {
+            const container = document.getElementById('tags-select-container');
+            if (allTags.length === 0) {
+                container.innerHTML = '<p class="text-gray-500 text-sm">暂无标签，请先在上方添加标签</p>';
+                return;
+            }
+            
+            let selectedTags = [];
+            if (selectedTagsStr) {
+                selectedTags = selectedTagsStr.trim(',').split(',').filter(tag => tag.trim() !== '');
+            }
+            
+            container.innerHTML = allTags.map(tag => {
+                const isSelected = selectedTags.includes(tag.name);
+                return `
+                    <label class="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" name="selected-tags" value="${tag.name}" ${isSelected ? 'checked' : ''} class="w-4 h-4 text-blue-500">
+                        <span class="text-sm text-gray-700">${tag.name}</span>
+                    </label>
+                `;
+            }).join('');
         }
 
         // 创建/编辑提醒
@@ -431,6 +652,14 @@
             
             const formData = new FormData(e.target);
             const reminderId = document.getElementById('reminder-id').value;
+            
+            // 获取选中的标签
+            const selectedTags = [];
+            const checkboxes = document.querySelectorAll('input[name="selected-tags"]:checked');
+            checkboxes.forEach(cb => selectedTags.push(cb.value));
+            
+            // 将标签添加到 formData
+            formData.set('tags', selectedTags.join(','));
             
             let url = '/api/reminders';
             let method = 'POST';
@@ -488,6 +717,9 @@
                     document.getElementById('trigger-time').value = triggerTime;
                     
                     document.getElementById('recipient-email').value = reminder.recipient_email;
+                    
+                    // 加载标签选择
+                    renderTagsSelect(reminder.tags);
                     
                     // 加载循环提醒设置
                     const repeatType = reminder.repeat_type || 'none';
@@ -605,6 +837,12 @@
             }
         });
 
+        document.getElementById('tags-modal').addEventListener('click', (e) => {
+            if (e.target.id === 'tags-modal') {
+                closeTagSettings();
+            }
+        });
+
         // 循环提醒逻辑
         function setupRepeatLogic() {
             const repeatTypeRadios = document.querySelectorAll('input[name="repeat_type"]');
@@ -622,8 +860,9 @@
         }
         
         // 初始化
-        window.onload = function() {
-            loadReminders();
+        window.onload = async function() {
+            await loadTags();
+            await loadReminders();
             setupRepeatLogic();
         };
     </script>
