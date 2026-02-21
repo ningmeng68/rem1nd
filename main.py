@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 import sqlite3
 import os
 from datetime import datetime, UTC
@@ -7,12 +7,26 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from apscheduler.schedulers.background import BackgroundScheduler
 import json
+from functools import wraps
 
 # 初始化 Flask 应用
 app = Flask(__name__)
+app.secret_key = os.urandom(24)
+DEFAULT_PASSWORD = 'admin'
 
 # 配置
 DATABASE = 'data/rem1nd.db'
+
+# 认证装饰器
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'authenticated' not in session or not session['authenticated']:
+            if request.is_json or request.path.startswith('/api/'):
+                return jsonify({"status": "error", "message": "未认证"}), 401
+            return redirect(url_for('login_page'))
+        return f(*args, **kwargs)
+    return decorated_function
 
 # 初始化数据库
 def init_db():
@@ -73,6 +87,22 @@ def init_db():
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         ''')
+    
+    # 检查 password_config 表是否存在
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='password_config'")
+    password_table_exists = cursor.fetchone()
+    
+    if not password_table_exists:
+        # 如果表不存在，创建表并插入默认密码
+        cursor.execute('''
+            CREATE TABLE password_config (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                password TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        cursor.execute('INSERT INTO password_config (password) VALUES (?)', (DEFAULT_PASSWORD,))
     
     conn.commit()
     conn.close()
@@ -138,6 +168,30 @@ def save_smtp_config(config):
             config['password'], config['sender_name']
         ))
     
+    conn.commit()
+    conn.close()
+
+# 加载密码配置
+def load_password():
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT password FROM password_config ORDER BY updated_at DESC LIMIT 1')
+    result = cursor.fetchone()
+    conn.close()
+    if result:
+        return result['password']
+    return DEFAULT_PASSWORD
+
+# 保存密码配置
+def save_password(password):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT id FROM password_config LIMIT 1')
+    existing = cursor.fetchone()
+    if existing:
+        cursor.execute('UPDATE password_config SET password = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', (password, existing['id']))
+    else:
+        cursor.execute('INSERT INTO password_config (password) VALUES (?)', (password,))
     conn.commit()
     conn.close()
 
@@ -296,13 +350,61 @@ atexit.register(lambda: scheduler.shutdown())
 
 # 路由
 
+# 登录页面
+@app.route('/login')
+def login_page():
+    if 'authenticated' in session and session['authenticated']:
+        return redirect(url_for('index'))
+    return render_template('login.html')
+
+# 登录 API
+@app.route('/api/login', methods=['POST'])
+def login():
+    password = request.form.get('password')
+    current_password = load_password()
+    if password == current_password:
+        session['authenticated'] = True
+        return jsonify({"status": "success"})
+    return jsonify({"status": "error", "message": "密码错误"}), 401
+
+# 登出 API
+@app.route('/api/logout', methods=['POST'])
+def logout():
+    session.pop('authenticated', None)
+    return jsonify({"status": "success"})
+
+# 修改密码 API
+@app.route('/api/password/change', methods=['POST'])
+@login_required
+def change_password():
+    old_password = request.form.get('old_password')
+    new_password = request.form.get('new_password')
+    confirm_password = request.form.get('confirm_password')
+    
+    current_password = load_password()
+    
+    if old_password != current_password:
+        return jsonify({"status": "error", "message": "原密码错误"}), 400
+    
+    if not new_password or len(new_password) < 1:
+        return jsonify({"status": "error", "message": "新密码不能为空"}), 400
+    
+    if new_password != confirm_password:
+        return jsonify({"status": "error", "message": "两次输入的密码不一致"}), 400
+    
+    save_password(new_password)
+    return jsonify({"status": "success"})
+
 # 首页
 @app.route('/')
 def index():
+    if 'authenticated' not in session or not session['authenticated']:
+        return redirect(url_for('login_page'))
     return render_template('index.html')
 
 # SMTP 配置 API
 @app.route('/api/smtp/config', methods=['GET', 'POST'])
+@login_required
 def smtp_config():
     if request.method == 'GET':
         config = load_smtp_config()
@@ -320,6 +422,7 @@ def smtp_config():
 
 # 测试 SMTP 配置
 @app.route('/api/smtp/test', methods=['POST'])
+@login_required
 def test_smtp():
     config = {
         "server": request.form.get('server'),
@@ -342,6 +445,7 @@ def test_smtp():
 
 # 提醒管理 API
 @app.route('/api/reminders', methods=['GET', 'POST'])
+@login_required
 def reminders():
     if request.method == 'GET':
         conn = get_db()
@@ -391,6 +495,7 @@ def reminders():
 
 # 单个提醒管理 API
 @app.route('/api/reminders/<int:reminder_id>', methods=['PUT', 'DELETE'])
+@login_required
 def reminder(reminder_id):
     if request.method == 'PUT':
         try:
